@@ -3357,6 +3357,12 @@ render(); connect();
 </script>
 <script>
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+(function(){ let ev=null; const show=()=>{ if(!ev||document.getElementById("instbar")) return; const d=document.createElement("div"); d.id="instbar";
+  d.setAttribute("style","position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:50;background:linear-gradient(135deg,#FF8A4C,#FF6A3D);color:#fff;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;font:600 15px Barlow,system-ui;box-shadow:0 12px 30px -10px rgba(0,0,0,.7)");
+  d.innerHTML='<span style="flex:1">Instala GYM JBR como app en tu móvil</span><button id="instgo" style="background:#fff;color:#E2481D;border:0;border-radius:10px;padding:8px 12px;font:700 14px Barlow,system-ui">Instalar</button><button id="instx" style="background:none;border:0;color:#fff;font-size:20px">×</button>';
+  document.body.append(d); document.getElementById("instgo").onclick=async()=>{ ev.prompt(); await ev.userChoice; ev=null; d.remove(); }; document.getElementById("instx").onclick=()=>d.remove(); };
+  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); ev=e; show(); });
+  window.addEventListener("appinstalled",()=>{ const d=document.getElementById("instbar"); if(d) d.remove(); }); })();
 </script>
 </body>
 </html>
