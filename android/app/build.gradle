@@ -1,0 +1,26 @@
+plugins { id 'com.android.application' }
+def runNo = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+android {
+    namespace 'es.jaimebr.gymjbr'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'es.jaimebr.gymjbr'
+        minSdk 26
+        targetSdk 34
+        versionCode runNo
+        versionName "1." + runNo
+    }
+    signingConfigs {
+        release {
+            storeFile file('../gymjbr.jks')
+            storePassword 'gymjbr2026'
+            keyAlias 'gymjbr'
+            keyPassword 'gymjbr2026'
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    lint { checkReleaseBuilds false; abortOnError false }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
