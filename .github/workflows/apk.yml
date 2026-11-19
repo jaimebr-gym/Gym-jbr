@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: apk
+  cancel-in-progress: true
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -29,7 +32,7 @@ jobs:
           rm -f build-error.log
           git add -A GYM-JBR.apk build-error.log 2>/dev/null || git add GYM-JBR.apk
           git commit -m "App Android ${GITHUB_RUN_NUMBER}" || exit 0
-          git pull --rebase origin main
+          git pull --rebase -X theirs origin main || (git rebase --abort; git fetch origin main; git reset --soft origin/main; git commit -m "App Android ${GITHUB_RUN_NUMBER}")
           git push origin HEAD:main
       - name: Guardar el registro si falla
         if: failure()
