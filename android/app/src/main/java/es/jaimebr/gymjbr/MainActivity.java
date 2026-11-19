@@ -44,7 +44,9 @@ import java.util.Set;
 
 public class MainActivity extends Activity {
     static final String URL = "https://jaimebr-gym.github.io/gym-jbr/";
+    static final String ALT = "https://jaimebr-gym.github.io/Gym-jbr/";
     static final int REQ_MIC = 7, REQ_FILE = 8;
+    boolean triedAlt = false;
 
     WebView web;
     TextToSpeech tts;
@@ -79,9 +81,13 @@ public class MainActivity extends Activity {
                 if (r.isForMainFrame()) v.loadUrl("file:///android_asset/offline.html");
             }
             @Override
+            public void onReceivedHttpError(WebView v, WebResourceRequest r, android.webkit.WebResourceResponse res) {
+                if (r.isForMainFrame() && res.getStatusCode() == 404 && !triedAlt) { triedAlt = true; v.loadUrl(ALT); }
+            }
+            @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
-                if (u.toString().startsWith(URL) || "file".equals(u.getScheme())) return false;
+                if ("jaimebr-gym.github.io".equalsIgnoreCase(u.getHost()) || "file".equals(u.getScheme())) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ex) { }
                 return true;
             }
