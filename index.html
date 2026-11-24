@@ -466,7 +466,7 @@ nav button{font-size:10.5px}
   /* Reconocimiento de voz */
   let cur=null;
   function NSR(){ this.lang="es-ES"; this.continuous=false; this.interimResults=false; this.maxAlternatives=1; this.onresult=null; this.onend=null; this.onerror=null; this.onstart=null; }
-  NSR.prototype.start=function(){ if(cur&&cur!==this){ const o=cur; cur=null; o.onend&&o.onend(); } cur=this; N.listen(this.lang||"es-ES",!!this.interimResults); };
+  NSR.prototype.start=function(){ if(cur&&cur!==this){ const o=cur; cur=null; o.onend&&o.onend(); } cur=this; N.listen(this.lang||"es-ES",!!this.interimResults,this.dictation?"dict":"cmd"); };
   NSR.prototype.stop=function(){ N.stopListening(); };
   NSR.prototype.abort=function(){ const me=this; N.stopListening(); setTimeout(()=>{ if(cur===me){ cur=null; me.onend&&me.onend(); } },50); };
   window.SpeechRecognition=window.webkitSpeechRecognition=NSR;
@@ -2589,7 +2589,7 @@ function tone(f0,f1,dur,vol){ try{ if(!actx||(state.prefs||{}).tones===false) re
   g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.08,t+0.05); g.gain.setValueAtTime(vol||0.08,t+dur-0.12); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+dur+0.02); }catch(e){} }
 function chime(kind){ if(kind==="go"){ ping(988,.1,.5); setTimeout(()=>ping(1319,.12,.8),160); } else if(kind==="done"){ ping(1047,.1,.5); setTimeout(()=>ping(1319,.1,.5),140); setTimeout(()=>ping(1568,.12,1.1),280); } }
-function ping(f,vol,dec){ try{ if(!actx||(state.prefs||{}).tones===false) return; const t=actx.currentTime;
+function ping(f,vol,dec){ try{ if(window.GymNative&&GymNative.ping&&(state.prefs||{}).tones!==false){ GymNative.ping(f,vol,dec); return; } if(!actx||(state.prefs||{}).tones===false) return; const t=actx.currentTime;
   [[1,1],[2.01,.28],[3.98,.08]].forEach(([m,a])=>{ const o=actx.createOscillator(), g=actx.createGain(); o.type="sine"; o.frequency.value=f*m;
     g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime((vol||.1)*a,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+(dec||.55)/m**.3);
     o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+(dec||.55)+.05); }); }catch(e){} }
@@ -3580,7 +3580,7 @@ handleHeard=function(raw,final){
 function dictate(ta,btn,onEnd){
   if(!SRec){ btn.textContent="Dictado no disponible"; return; }
   if(C&&C.dictRec){ try{ C.dictRec.stop(); }catch(e){} return; }
-  hush(); micStop(); const r=new SRec(); r.lang="es-ES"; r.continuous=false; r.interimResults=false; if(C) C.dictRec=r;
+  hush(); micStop(); const r=new SRec(); r.lang="es-ES"; r.continuous=false; r.interimResults=false; r.dictation=true; if(C) C.dictRec=r;
   const base=ta.value; btn.textContent="● Escuchando… toca para parar"; btn.classList.add("on");
   r.onresult=ev=>{ const t=[...ev.results].map(x=>x[0].transcript).join(" ").trim(); if(t){ ta.value=(base?base+" ":"")+t.charAt(0).toUpperCase()+t.slice(1); onEnd&&onEnd(); } };
   r.onend=()=>{ if(C) C.dictRec=null; btn.textContent="🎙 Dictar nota"; btn.classList.remove("on"); setTimeout(()=>{ if(C) micStart(); },400); };
@@ -3601,6 +3601,122 @@ const _settingsSheetV6=settingsSheet;
 settingsSheet=function(){ _settingsSheetV6.apply(this,arguments); const sh=sheet; const b=[...sh.querySelectorAll("button.btn")].pop(); const box=v6Settings(); if(b) b.before(box); else sh.append(box); };
 
 window.__v6={planSession,orderSession,estMin,calF,uniOK,willDrop,rpe:()=>enterRpe(()=>{window.__rpeNext=1;}),draft:()=>draft,dropRest:()=>{ const id=draft.ids[C.i]; draft.entries[id].drop=true; enterRest(12,{i:C.i,k:1},""); }};
+
+/* =========================================================
+   V7: banco, figuras nuevas, series extra, saltar entre ejercicios
+   ========================================================= */
+/* ---------- Banco: puesto o quitado ---------- */
+const BENCH_ON=new Set(["press","mariposa","remomar","extcuad","jalon","jalonsup"]);
+const BENCH_ANY=new Set(["remo","remo1"]);
+const benchOf=id=>BENCH_ON.has(id)?"on":BENCH_ANY.has(id)?"any":"off";
+const _setupTextV7=setupText;
+setupText=function(id){ const b=benchOf(id); return _setupTextV7(id)+(b==="on"?" · con banco":b==="off"?" · sin banco":""); };
+const _moveCostV7=moveCost;
+moveCost=function(a,b){ const A=benchOf(a), B=benchOf(b); return _moveCostV7(a,b)+(A!=="any"&&B!=="any"&&A!==B?2.5:0); };
+
+/* ---------- Figuras de los ejercicios nuevos ---------- */
+const STAND={th:-3,sh:0,th2:4,sh2:0};
+PIC.crunchpolea={face:1,A:{P:[108,119],t:8,u:100,f:-140,th:0,sh:-90},B:{P:[108,119],t:55,u:53,f:-187,th:0,sh:-90},cable:HIGH,to:"H",bar:true,
+  mach:'<rect x="74" y="146" width="44" height="4" rx="1.5" fill="var(--fig2)"/>'};
+PIC.pullover={face:1,A:Object.assign({P:[116,92],t:22,u:150,f:150},STAND),B:Object.assign({P:[116,92],t:22,u:20,f:20},STAND),cable:[162,14],to:"H",bar:true,mach:PIC.triceps.mach};
+PIC.triover={face:-1,A:{P:[108,92],t:-15,u:-168,f:25,th:-12,sh:-5,th2:12,sh2:10},B:{P:[108,92],t:-15,u:-168,f:-168,th:-12,sh:-5,th2:12,sh2:10},cable:LOWP,to:"H",bar:true,mach:''};
+PIC.encogimientos={face:1,A:Object.assign({P:[134,92],t:3,u:2,f:2},STAND),B:Object.assign({P:[134,92],t:3,u:2,f:2},STAND),cable:LOWP,to:"H",bar:true,shrug:6,mach:''};
+PIC.inclinacion={front:"bend"};
+const _drawPictoV7=drawPicto;
+drawPicto=function(item,t){
+  const d=item.def; if(!d.shrug) return _drawPictoV7(item,t);
+  const s=skel(lerpPose(d.A,d.B,t),d.face), k=d.shrug*t;
+  ["S","Hd","N","E","H"].forEach(p=>s[p]=[s[p][0],s[p][1]-k]);
+  const tmp=svgEl("g",{}); drawBody(tmp,s,d,item.ex,false);
+  item.g.innerHTML='<line x1="'+d.cable[0]+'" y1="'+d.cable[1]+'" x2="'+f1(s.H[0])+'" y2="'+f1(s.H[1])+'" stroke="var(--muted)" stroke-width="1.3"/>'+tmp.innerHTML+
+    '<rect x="'+f1(s.H[0]-2)+'" y="'+f1(s.H[1]-5)+'" width="4" height="10" rx="2" fill="var(--muted)"/>';
+  if(item.lift) item.lift.setAttribute("transform","translate(0 "+f1(-10*t)+")");
+};
+const _drawFrontV7=drawFront;
+drawFront=function(item,t){
+  if(item.def.front!=="bend") return _drawFrontV7(item,t);
+  const P=new Set(item.ex.p), Q=new Set(item.ex.q), c=m=>P.has(m)?"var(--acc)":Q.has(m)?"var(--acc2)":null;
+  const cx=118, hip=[cx,96], ang=14-30*t, a=ang*Math.PI/180;
+  const R=p=>{ const dx=p[0]-hip[0], dy=p[1]-hip[1]; return [hip[0]+dx*Math.cos(a)-dy*Math.sin(a), hip[1]+dx*Math.sin(a)+dy*Math.cos(a)]; };
+  const SL=R([cx-14,50]), SR=R([cx+14,50]), Hd=R([cx,30]), N1=R([cx,38]), N2=R([cx,46]);
+  const HR=[SR[0]+1,SR[1]+44], ER=[SR[0]+1,SR[1]+22];
+  const EL=[SL[0]-11,SL[1]+20], HLh=[cx-13,90];
+  const o=[];
+  o.push('<line x1="172" y1="146" x2="'+f1(HR[0])+'" y2="'+f1(HR[1])+'" stroke="var(--muted)" stroke-width="1.3"/>');
+  [[[cx-7,96],[cx-14,121],[cx-17,146]],[[cx+7,96],[cx+14,121],[cx+17,146]]].forEach(([h,k,f])=>o.push('<path d="'+capsule(h,k,6.5,4.6)+'" fill="var(--body)"/><path d="'+capsule(k,f,4.4,3.2)+'" fill="var(--body)"/>'));
+  const tl=R([cx-11,98]), tr=R([cx+11,98]);
+  o.push('<path d="M'+f1(tl[0])+','+f1(tl[1])+' L'+f1(SL[0]-3)+','+f1(SL[1]-2)+' L'+f1(SR[0]+3)+','+f1(SR[1]-2)+' L'+f1(tr[0])+','+f1(tr[1])+' Z" fill="var(--body)" stroke="var(--body)" stroke-width="6" stroke-linejoin="round"/>');
+  if(c("obl")){ const o1=R([cx-10,68]), o2=R([cx-9,90]); o.push('<path d="'+capsule(o1,o2,4.4,4)+'" fill="'+c("obl")+'"/>'); const o3=R([cx+10,68]), o4=R([cx+9,90]); o.push('<path d="'+capsule(o3,o4,3.2,3)+'" fill="var(--acc2)" opacity=".7"/>'); }
+  if(c("abs")){ const a1=R([cx,70]), a2=R([cx,90]); o.push('<path d="'+capsule(a1,a2,4.5,4)+'" fill="'+c("abs")+'"/>'); }
+  o.push('<path d="'+capsule(N1,N2,3.4,3.4)+'" fill="var(--body)"/><circle cx="'+f1(Hd[0])+'" cy="'+f1(Hd[1])+'" r="8" fill="var(--body)"/>');
+  o.push('<path d="'+capsule(SR,ER,4.6,3.6)+'" fill="var(--body)"/><path d="'+capsule(ER,HR,3.6,2.8)+'" fill="var(--body)"/>');
+  o.push('<path d="'+capsule(SL,EL,4.6,3.6)+'" fill="var(--body)"/><path d="'+capsule(EL,HLh,3.6,2.8)+'" fill="var(--body)"/>');
+  o.push('<rect x="'+f1(HR[0]-3)+'" y="'+f1(HR[1]-2)+'" width="6" height="7" rx="2" fill="var(--muted)"/>');
+  item.g.innerHTML=o.join("");
+  if(item.lift) item.lift.setAttribute("transform","translate(0 "+f1(-14*t)+")");
+};
+/* Aviso de banco en el dibujo */
+const PIC_OFF=new Set(["triceps","curl","remomenton","gemelos","sentadilla","patada","femoral","crunchpolea","inclinacion","pullover","triover","encogimientos","lenador","abduccion"]);
+const _pictoV7=picto;
+picto=function(key,w,opts){
+  const svg=_pictoV7(key,w,opts); if(!svg||svg.tagName!=="svg"||!PIC[key]) return svg;
+  const off=PIC_OFF.has(key), g=svgEl("g",{});
+  g.innerHTML='<rect x="63" y="3" width="'+(off?40:42)+'" height="11" rx="5.5" fill="'+(off?"var(--warn-soft)":"var(--acc-soft)")+'"/><text x="'+(off?83:84)+'" y="11.3" text-anchor="middle" font-size="7" font-weight="700" fill="'+(off?"var(--warn)":"var(--acc-deep)")+'">'+(off?"SIN BANCO":"CON BANCO")+'</text>';
+  if(!PIC[key].top) svg.append(g); return svg;
+};
+
+/* ---------- Series extra y saltar entre ejercicios ---------- */
+const _setsForV7=setsFor;
+setsFor=function(id,readiness,idx){ const n=_setsForV7(id,readiness,idx); const e=draft&&draft.entries&&draft.entries[id]; return n+((e&&e.extra)||0); };
+function doneOf(id){ const e=draft.entries[id]; return e.reps.filter(r=>r>0).length; }
+function extraSet(i){
+  const id=draft.ids[i], e=draft.entries[id]; e.skipped=false;
+  const d=doneOf(id), n=setsFor(id,draft.readiness,draft.idx); if(d>=n) e.extra=(e.extra||0)+(d-n+1);
+  saveDraft(); C.i=i; C.k=doneOf(id); C.fbSaid=C.fbSaid||{}; C.fbSaid[id]=1;
+}
+function exListSheet(){
+  const sh=openSheet();
+  sh.append(el("h2",null,"Ejercicios de hoy"),el("div",{class:"sub"},"Toca uno para hacerlo ahora: si ya lo terminaste, añade otra serie; si lo saltaste, lo recupera."));
+  const L=el("div",{class:"card list",style:"padding:4px 14px;margin-top:10px"});
+  draft.ids.forEach((id,i)=>{ const e=draft.entries[id], d=doneOf(id), n=setsFor(id,draft.readiness,draft.idx);
+    const st=e.skipped&&!d?"saltado":d>=n?d+" series ✓":d+" de "+n;
+    L.append(el("button",{class:"li tap",style:"width:100%;background:none;text-align:left",onclick:()=>{ closeSheet(); extraSet(i); say(d>=n?"Otra serie de "+EX[id].n.toLowerCase()+".":EX[id].n+".",true); enterSet(false); }},
+      el("div",null,el("div",{class:"nm"},(i===C.i?"▸ ":"")+EX[id].n),el("div",{class:"small sub"},setupText(id))),el("div",{class:"v"},st))); });
+  sh.append(L);
+}
+const _enterSetV7=enterSet;
+enterSet=function(announce){
+  const id=draft.ids[C.i], prev=C.lastId;
+  _enterSetV7(announce); C.lastId=id;
+  const foot=coachEl.querySelector(".cfoot"); if(foot){ foot.append(el("div",{class:"row",style:"gap:8px"},
+    el("button",{class:"cbtn ghost",onclick:()=>{ say("Vale, una serie más.",true); C.k=C.k; const e=draft.entries[id]; e.extra=(e.extra||0)+1; saveDraft(); const pill=coachEl.querySelector(".pill"); if(pill) pill.textContent="Serie "+(C.k+1)+" de "+setsFor(id,draft.readiness,draft.idx); }},"＋ Una serie más"),
+    el("button",{class:"cbtn ghost",onclick:exListSheet},"☰ Ejercicios"))); }
+  if(C.k===0&&prev&&prev!==id){ const a=benchOf(prev), b=benchOf(id); let t="";
+    if(a==="on"&&b==="off") t="Quita el banco para este."; else if(a==="off"&&b==="on") t="Vuelve a poner el banco.";
+    if(t){ const body=coachEl.querySelector(".cbody"); if(body) body.prepend(el("div",{class:"matbox",style:"text-align:center"},el("b",null,t)));
+      if(C.lastSetup) C.lastSetup.splice(0,0,t); else say(t); } }
+};
+const _enterRpeV7=enterRpe;
+enterRpe=function(next){
+  _enterRpeV7(next); const id=draft.ids[C.i], i=C.i;
+  const more=()=>{ C.onReady=null; extraSet(i); say("Muy bien, otra serie. Descansa y seguimos.",true); enterRest(restFor(id),{i,k:C.k},""); };
+  C.moreSet=more;
+  const foot=coachEl.querySelector(".cfoot"); if(foot) foot.prepend(el("button",{class:"cbtn ghost",onclick:more},"＋ Hacer otra serie de este"));
+  const foot2=coachEl.querySelector(".cfoot"); if(foot2) foot2.append(el("button",{class:"cbtn ghost",onclick:exListSheet},"☰ Elegir otro ejercicio"));
+};
+const _handleHeardV7=handleHeard;
+handleHeard=function(raw,final){
+  if(C&&final){ const t=norm(raw);
+    if(/\b(otra serie|una serie mas|una mas|serie extra)\b/.test(t)&&!(norm(LASTSAID).includes(t)&&(busy()||Date.now()-LASTEND<1500))){
+      if(C.phase==="rpe"&&C.moreSet){ C.moreSet(); return true; }
+      if(C.phase==="set"){ const id=draft.ids[C.i], e=draft.entries[id]; e.extra=(e.extra||0)+1; saveDraft(); say("Vale, una serie más.",true); return true; } } }
+  return _handleHeardV7(raw,final);
+};
+
+/* ---------- Migración: el crunch en polea alta, favorito ---------- */
+const _renderV7=render;
+render=function(){ if(state&&!state.v7m){ state.v7m=1; state.exPref=state.exPref||{}; if(!state.exPref.crunchpolea) state.exPref.crunchpolea="fav"; if(state.plan) state.plan.n=-1; lsSet(LS_KEY,state); } _renderV7(); };
+window.__v7={PIC,pic:k=>picto(k,200,{ex:EX[k]||{p:[],q:[]}}),list:()=>exListSheet()};
 
 /* Lista de frases que dice la entrenadora (para generar los audios) */
 window.__corpus=function(){

@@ -30,6 +30,14 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import android.media.AudioFormat;
+import android.media.AudioTrack;
+import org.vosk.LibVosk;
+import org.vosk.LogLevel;
+import org.vosk.Model;
+import org.vosk.Recognizer;
+import org.vosk.android.SpeechService;
+import org.vosk.android.StorageService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -59,6 +67,10 @@ public class MainActivity extends Activity {
     AudioFocusRequest focus;
     int queued = 0;
     ValueCallback<Uri[]> fileCb;
+    Model model;
+    SpeechService vosk;
+    boolean cmdOn = false, voskFailed = false;
+    static final String GRAMMAR = "[\"para\",\"pausa\",\"espera\",\"alto\",\"más despacio\",\"despacio\",\"más lento\",\"más rápido\",\"ritmo normal\",\"repite\",\"otra vez\",\"siguiente\",\"saltar\",\"sigue\",\"seguimos\",\"continúa\",\"listo\",\"ya estoy\",\"adelante\",\"vamos\",\"empezamos\",\"otra serie\",\"una más\",\"una serie más\",\"muy pesado\",\"demasiado pesado\",\"pesado\",\"no he podido\",\"no puedo\",\"imposible\",\"fácil\",\"muy fácil\",\"me duele\",\"molestia\",\"dolor\",\"no me gusta\",\"bien\",\"perfecto\",\"[unk]\"]";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -118,11 +130,80 @@ public class MainActivity extends Activity {
             pending.clear();
         });
         web.loadUrl(URL);
+        try {
+            LibVosk.setLogLevel(LogLevel.WARNINGS);
+            StorageService.unpack(this, "model-es", "model", m -> { model = m; if (cmdOn) startVosk(); }, e -> { voskFailed = true; });
+        } catch (Throwable t) { voskFailed = true; }
+    }
+
+    void startVosk() {
+        if (model == null) return;
+        if (vosk != null) return;
+        try {
+            Recognizer r = new Recognizer(model, 16000.0f, GRAMMAR);
+            r.setWords(true);
+            vosk = new SpeechService(r, 16000.0f);
+            vosk.startListening(new org.vosk.android.RecognitionListener() {
+                public void onPartialResult(String h) { }
+                public void onResult(String h) { deliver(h); }
+                public void onFinalResult(String h) { deliver(h); }
+                public void onError(Exception e) { stopVosk(); }
+                public void onTimeout() { }
+            });
+        } catch (Exception e) { voskFailed = true; vosk = null; }
+    }
+
+    void stopVosk() {
+        if (vosk != null) { try { vosk.stop(); vosk.shutdown(); } catch (Exception e) { } vosk = null; }
+    }
+
+    void deliver(String json) {
+        if (!cmdOn) return;
+        try {
+            JSONObject o = new JSONObject(json);
+            StringBuilder b = new StringBuilder();
+            JSONArray w = o.optJSONArray("result");
+            if (w != null) {
+                for (int i = 0; i < w.length(); i++) {
+                    JSONObject x = w.getJSONObject(i);
+                    String wd = x.optString("word");
+                    if (x.optDouble("conf", 1) >= 0.8 && !"[unk]".equals(wd)) b.append(b.length() > 0 ? " " : "").append(wd);
+                }
+            }
+            String t = b.toString().trim();
+            if (t.isEmpty()) return;
+            JSONArray a = new JSONArray(); a.put(t);
+            js("window.__srResult&&__srResult(" + JSONObject.quote(a.toString()) + ",true);window.__srEnd&&__srEnd()");
+        } catch (Exception e) { }
+    }
+
+    void ping(double f, double vol, double dec) {
+        new Thread(() -> {
+            try {
+                int sr = 22050, n = (int) (sr * Math.max(0.15, Math.min(1.5, dec)));
+                short[] buf = new short[n];
+                double v = Math.max(0.05, Math.min(1, vol)) * 0.9 * 32767;
+                for (int i = 0; i < n; i++) {
+                    double t = (double) i / sr, env = Math.min(1, t / 0.004) * Math.exp(-t * 5.0 / dec);
+                    buf[i] = (short) (v * env * (Math.sin(2 * Math.PI * f * t) + 0.25 * Math.sin(4 * Math.PI * f * t)) / 1.25);
+                }
+                AudioTrack at = new AudioTrack.Builder()
+                        .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                        .setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sr)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                        .setBufferSizeInBytes(n * 2).setTransferMode(AudioTrack.MODE_STATIC).build();
+                at.write(buf, 0, n);
+                at.play();
+                Thread.sleep((long) (n * 1000L / sr) + 100);
+                at.release();
+            } catch (Exception e) { }
+        }).start();
     }
 
     void done(String id) {
         js("window.__ttsEnd&&__ttsEnd('" + id + "')");
-        runOnUiThread(() -> { queued = Math.max(0, queued - 1); if (queued == 0) dropFocus(); });
+        runOnUiThread(() -> { queued = Math.max(0, queued - 1); });
     }
 
     void js(String code) { runOnUiThread(() -> { if (web != null) web.evaluateJavascript(code, null); }); }
@@ -148,7 +229,6 @@ public class MainActivity extends Activity {
         tts.setSpeechRate(rate);
         tts.setPitch(pitch);
         queued++;
-        takeFocus();
         Bundle p = new Bundle();
         tts.speak(text, TextToSpeech.QUEUE_ADD, p, id);
     }
@@ -214,7 +294,8 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] res) {
         if (code != REQ_MIC) return;
-        if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && pendingLang != null) startListening(pendingLang, pendingInterim);
+        if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && "cmd".equals(pendingLang)) { cmdOn = true; startVosk(); }
+        else if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED && pendingLang != null) startListening(pendingLang, pendingInterim);
         else js("window.__srError&&__srError('not-allowed');window.__srEnd&&__srEnd()");
         pendingLang = null;
     }
@@ -241,6 +322,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         mute(false);
         if (rec != null) rec.destroy();
+        stopVosk();
         if (tts != null) tts.shutdown();
         super.onDestroy();
     }
@@ -264,8 +346,23 @@ public class MainActivity extends Activity {
             } catch (Exception e) { }
             return a.toString();
         }
-        @JavascriptInterface public void listen(String lang, boolean interim) { runOnUiThread(() -> startListening(lang, interim)); }
-        @JavascriptInterface public void stopListening() { runOnUiThread(() -> { if (rec != null && listening) { try { rec.cancel(); } catch (Exception e) { } srDone(null); } }); }
+        @JavascriptInterface public void listen(String lang, boolean interim, String mode) {
+            runOnUiThread(() -> {
+                if ("cmd".equals(mode) && !voskFailed) {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        pendingLang = "cmd"; requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC); return;
+                    }
+                    cmdOn = true; startVosk();
+                } else { cmdOn = false; stopVosk(); startListening(lang, interim); }
+            });
+        }
+        @JavascriptInterface public void stopListening() {
+            runOnUiThread(() -> {
+                cmdOn = false; stopVosk();
+                if (rec != null && listening) { try { rec.cancel(); } catch (Exception e) { } srDone(null); }
+            });
+        }
+        @JavascriptInterface public void ping(double f, double vol, double dec) { MainActivity.this.ping(f, vol, dec); }
         @JavascriptInterface public boolean saveFile(String name, String data) {
             try {
                 byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
